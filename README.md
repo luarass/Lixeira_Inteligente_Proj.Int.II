@@ -1,0 +1,1 @@
+# Lixeira_Inteligente_Proj.Int.II
