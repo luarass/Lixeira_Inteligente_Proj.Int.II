@@ -26,9 +26,9 @@ Esse projeto surge como uma solução prática para realizar a triagem de resíd
 
 ### Componentes físicos
 
-Lixeiras para coleta de lixo (2x)
-Estrutura de montagem para câmera e servo
-Sistema de calha
+* Lixeiras para coleta de lixo (2x)
+* Estrutura de montagem para câmera e servo
+* Sistema de calha
 
 ## Autores
 
