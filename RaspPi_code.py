@@ -12,8 +12,7 @@ import time
 # servo.start(0)
 
 def mover_servo(angulo):
-    """ Função para mover o servo (Desativada temporariamente) """
-    print(f"[MOTOR] Simulação: Movendo motor para {angulo} graus.")
+    print(f"[MOTOR] Movendo para {angulo} graus.")
     # duty = 2 + (angulo / 18)
     # GPIO.output(PINO_SERVO, True)
     # servo.ChangeDutyCycle(duty)
@@ -21,35 +20,40 @@ def mover_servo(angulo):
     # GPIO.output(PINO_SERVO, False)
     # servo.ChangeDutyCycle(0) 
 
-# --- CARREGAR O MODELO TFLITE QUANTIZADO ---
-MODEL_PATH = "model.tflite" 
+# --- CONFIGURAÇÕES DO PROJETO ---
+MODEL_PATH = "model.tflite"
+LIMITE_CONFIANCA = 0.90  # Limite de 90% de certeza
+CLASSES = ["plastico", "papel", "metal", "rejeito"]
 
+# --- INICIALIZAR O MODELO DE IA ---
 interpreter = tflite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
-
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-# Mapeamento das classes exatamente na ordem do Teachable Machine
-CLASSES = ["plastico", "papel", "metal", "rejeito"]
+# --- VARIÁVEIS DE CONTROLE DE ESTADO ---
+ultima_classe_estavel = "vazio"
+contador_confirmacao = 0
+LEITURAS_NECESSARIAS = 8  # Quantas frames seguidas a IA precisa acertar para mover a rampa
 
 # --- INICIAR A CÂMERA ---
 cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640) # Baixa resolução
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-print("Lixeira Inteligente Pronta! Aproxime o objeto...")
+print("Lixeira Inteligente Pronta na posição HOME (Horizontal)...")
+mover_servo(90) # Começa na horizontal
 
 try:
     while True:
         ret, frame = cap.read()
         if not ret:
+            print("Erro ao acessar a câmera.")
             break
 
-        # O Teachable Machine usa imagens 224x224
+       
         img = cv2.resize(frame, (224, 224))
-        img = np.expand_dims(img, axis=0)
-        
-        # Converter para o formato que o modelo Quantized espera (UINT8)
-        img = img.astype(np.uint8)
+        img = np.expand_dims(img, axis=0).astype(np.uint8)
 
         # Rodar a IA
         interpreter.set_tensor(input_details[0]['index'], img)
@@ -61,39 +65,61 @@ try:
         classe_detectada = CLASSES[id_classe]
         certeza = output_data[0][id_classe] / 255.0 
 
-        # Só toma uma ação se a IA tiver mais de 95% de certeza
-        if certeza > 0.95:
-            texto = f"{classe_detectada} ({certeza*100:.1f}%)"
-            
-            # --- LÓGICA DE MOVIMENTO DO SERVO ---
-            if classe_detectada == "plastico":
-                print("Detectado: Plástico ->Abre o lixo reciclavel")
-                mover_servo(0) 
-            elif classe_detectada == "papel":
-                print("Detectado: Papel -> Abre o lixo reciclavel")
-                mover_servo(0) 
-            elif classe_detectada == "metal":
-                print("Detectado: Metal -> Abre o lixo reciclavel")
-                mover_servo(0)
-            elif classe_detectada == "rejeito":
-                print("Detectado: Rejeito -> Abre o lixo comum")
-                mover_servo(90)
+        # Filtro 1: Confiança alta?
+        if certeza >= LIMITE_CONFIANCA:
+            # Filtro 2: É o mesmo objeto que vimos no frame anterior?
+            if classe_detectada == ultima_classe_estavel:
+                contador_confirmacao += 1
+            else:
+                contador_confirmacao = 0
+                ultima_classe_estavel = classe_detectada
         else:
-            texto = "Analisando..."
+            contador_confirmacao = 0 # Se hesitar, zera o contador
 
-        # Mostrar na tela do VNC o que a IA está vendo
-        cv2.putText(frame, texto, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        # Se a IA detectou a mesma coisa com certeza por vários frames seguidos:
+        if contador_confirmacao >= LEITURAS_NECESSARIAS:
+
+            # Se for apenas o fundo vazio, não faz nada, continua reto
+            if classe_detectada == "vazio":
+                texto_status = "Aguardando objeto..."
+                contador_confirmacao = 0
+
+            # Se for RECICLÁVEL (Plástico, Papel ou Metal)
+            elif classe_detectada in ["plastico", "papel", "metal"]:
+                print(f"\n[SUCESSO] Confirmado {classe_detectada}! Destino: RECICLÁVEL")
+                mover_servo(45) # Inclina a rampa para o lado reciclável
+                print("Aguardando o objeto deslizar...")
+                time.sleep(3.0) # Espera 3 segundos com a rampa aberta
+
+                print("Retornando para a posição HOME...")
+                mover_servo(90) # Volta para a horizontal
+                time.sleep(1.0) # Tempo de estabilização
+                contador_confirmacao = 0 # Reseta para a próxima leitura
+
+            # Se for REJEITO (Não reciclável)
+            elif classe_detectada == "rejeito":
+                print(f"\n[SUCESSO] Confirmado Rejeito! Destino: NÃO RECICLÁVEL")
+                mover_servo(135) # Inclina a rampa para o outro lado
+                print("Aguardando o objeto deslizar...")
+                time.sleep(3.0)
+
+                print("Retornando para a posição HOME...")
+                mover_servo(90)
+                time.sleep(1.0)
+                contador_confirmacao = 0
+                
+        # Interface visual do VNC
+        texto_tela = f"Vendo: {classe_detectada} ({certeza*100:.0f}%) | Conf: {contador_confirmacao}"
+        cv2.putText(frame, texto_tela, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         cv2.imshow("Lixeira Inteligente", frame)
 
-        # Se apertar 'q' na janela da câmera, fecha o programa
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
 except KeyboardInterrupt:
     print("\nDesligando lixeira...")
-
 finally:
     cap.release()
     cv2.destroyAllWindows()
-    # servo.stop()          # COMENTADO
-    # GPIO.cleanup()        # COMENTADO
+    # servo.stop()       
+    # GPIO.cleanup()        
