@@ -2,23 +2,23 @@ import cv2
 import numpy as np
 import tflite_runtime.interpreter as tflite
 import time
-# import RPi.GPIO as GPIO  # COMENTADO: Desativado por enquanto
+import RPi.GPIO as GPIO  # COMENTADO: Desativado por enquanto
 
-# --- CONFIGURAÇÃO DO SERVO MOTOR (COMENTADO) ---
-# PINO_SERVO = 18 
-# GPIO.setmode(GPIO.BCM)
-# GPIO.setup(PINO_SERVO, GPIO.OUT)
-# servo = GPIO.PWM(PINO_SERVO, 50)
-# servo.start(0)
+# --- CONFIGURAÇÃO DO SERVO MOTOR ---
+PINO_SERVO = 18 
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(PINO_SERVO, GPIO.OUT)
+servo = GPIO.PWM(PINO_SERVO, 50)
+servo.start(0)
 
 def mover_servo(angulo):
     print(f"[MOTOR] Movendo para {angulo} graus.")
-    # duty = 2 + (angulo / 18)
-    # GPIO.output(PINO_SERVO, True)
-    # servo.ChangeDutyCycle(duty)
-    # time.sleep(0.5) 
-    # GPIO.output(PINO_SERVO, False)
-    # servo.ChangeDutyCycle(0) 
+    duty = 2 + (angulo / 18)
+    GPIO.output(PINO_SERVO, True)
+    servo.ChangeDutyCycle(duty)
+    time.sleep(0.5) 
+    GPIO.output(PINO_SERVO, False)
+    servo.ChangeDutyCycle(0) 
 
 # --- CONFIGURAÇÕES DO PROJETO ---
 MODEL_PATH = "model.tflite"
@@ -121,5 +121,5 @@ except KeyboardInterrupt:
 finally:
     cap.release()
     cv2.destroyAllWindows()
-    # servo.stop()       
-    # GPIO.cleanup()        
+    servo.stop()       
+    GPIO.cleanup()        
